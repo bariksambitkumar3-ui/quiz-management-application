@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn, Practice, Compete &amp; Improve</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<div id="topbar"><span class="sname">My School</span><button id="menu" aria-label="Open menu">☰</button></div>
+<aside id="sidebar">
+  <div class="brand"><div class="logo-fallback" id="logoBox">📚</div><span class="sname">My School</span></div>
+  <nav>
+    <a href="#home">Home</a><a href="#about">About</a><a href="#features">Features</a>
+    <a href="#how">How It Works</a><a href="#contact">Contact</a><a class="login" href="login.html">Login</a>
+  </nav>
+</aside>
+<div class="content">
+<section class="hero" id="home">
+  <div>
+    <h1>Learn, Practice, Compete &amp; Improve!</h1>
+    <p>Take scheduled quizzes, see your marks the moment you finish, and watch your progress grow subject by subject.</p>
+    <div class="cta"><a class="btn btn-primary" href="login.html">Get Started</a><a class="btn btn-outline" href="#features">Explore Features</a></div>
+  </div>
+  <svg viewBox="0 0 480 400" role="img" aria-label="Children reading and learning">
+    <circle cx="240" cy="210" r="170" fill="#f6e3e8"/>
+    <rect x="90" y="300" width="300" height="22" rx="8" fill="#800020"/>
+    <rect x="110" y="278" width="260" height="22" rx="8" fill="#198754"/>
+    <rect x="130" y="256" width="220" height="22" rx="8" fill="#2563eb"/>
+    <g><circle cx="170" cy="170" r="34" fill="#f4c7a1"/><path d="M136 164a34 30 0 0 1 68 0z" fill="#3b2a24"/>
+       <circle cx="159" cy="173" r="4" fill="#252525"/><circle cx="181" cy="173" r="4" fill="#252525"/><path d="M160 186q10 9 20 0" stroke="#252525" stroke-width="3" fill="none"/>
+       <rect x="138" y="206" width="64" height="50" rx="18" fill="#ffa500"/></g>
+    <g><circle cx="320" cy="170" r="34" fill="#e2a977"/><path d="M286 168q34-44 68 0q-10-12-34-12t-34 12z" fill="#252525"/>
+       <circle cx="309" cy="174" r="4" fill="#252525"/><circle cx="331" cy="174" r="4" fill="#252525"/><path d="M310 187q10 9 20 0" stroke="#252525" stroke-width="3" fill="none"/>
+       <rect x="288" y="206" width="64" height="50" rx="18" fill="#dc3545"/></g>
+    <rect x="205" y="222" width="70" height="46" rx="6" fill="#fff" stroke="#800020" stroke-width="4"/><path d="M240 222v46" stroke="#800020" stroke-width="4"/>
+    <text x="60" y="90" font-size="38">⭐</text><text x="390" y="80" font-size="34">✏️</text><text x="400" y="250" font-size="30">🏆</text>
+  </svg>
+</section>
+<section class="alt"><div class="stats">
+  <div class="stat"><b>10,000+</b>Quizzes taken</div><div class="stat"><b>500+</b>Teachers</div>
+  <div class="stat"><b>5,000+</b>Students</div><div class="stat"><b>92%</b>Report better results</div>
+</div></section>
+<section id="about"><h2>About</h2>
+  <p style="max-width:680px">Our examination platform connects schools, teachers and students. Teachers schedule quizzes, students take them on any device, and everyone gets clear, instant performance insights.</p></section>
+<section class="alt" id="features"><h2>Features</h2><div class="grid">
+  <div class="card"><div class="ic">🗓️</div><h3>Scheduled quizzes</h3><p>Quizzes open and close at the time the teacher sets.</p></div>
+  <div class="card"><div class="ic">⏱️</div><h3>Timed &amp; auto-submit</h3><p>A countdown timer, with answers saved and submitted when time ends.</p></div>
+  <div class="card"><div class="ic">✅</div><h3>Instant marks</h3><p>Marks, percentage and pass or fail appear right after submitting.</p></div>
+  <div class="card"><div class="ic">📊</div><h3>Performance charts</h3><p>Subject-wise results, averages and progress over time.</p></div>
+  <div class="card"><div class="ic">👩‍🏫</div><h3>Teacher tools</h3><p>MCQ, true/false and short-answer questions with class analysis.</p></div>
+  <div class="card"><div class="ic">🔒</div><h3>Secure access</h3><p>Separate admin, teacher and student logins.</p></div></div></section>
+<section id="how"><h2>How It Works</h2>
+  <div class="step"><span>1</span><div><b>Sign in</b><br>Use the email or registration number your school gave you.</div></div>
+  <div class="step"><span>2</span><div><b>Take your quiz</b><br>Open it during its scheduled time and answer one question at a time.</div></div>
+  <div class="step"><span>3</span><div><b>See your progress</b><br>Check your marks and charts on your dashboard.</div></div></section>
+<section class="alt" id="contact"><h2>Contact</h2><p id="contactInfo">Ask your school office for your login details.</p></section>
+<footer>© 2026 <span class="sname">My School</span>. All rights reserved.</footer>
+</div>
+<script src="config.js"></script>
+<script>
+const sb=document.getElementById("sidebar");
+document.getElementById("menu").onclick=()=>sb.classList.toggle("open");
+sb.querySelectorAll("a").forEach(a=>a.onclick=()=>sb.classList.remove("open"));
+fetch(API_BASE+"/school/").then(r=>r.json()).then(s=>{
+  document.querySelectorAll(".sname").forEach(e=>e.textContent=s.name);
+  document.title=s.name;
+  if(s.logo){const i=document.createElement("img");i.src=s.logo;i.alt="";document.getElementById("logoBox").replaceWith(i);}
+  const c=[s.address,s.phone,s.email].filter(Boolean).join(" · ");if(c)document.getElementById("contactInfo").textContent=c;
+}).catch(()=>{});
+</script></body></html>

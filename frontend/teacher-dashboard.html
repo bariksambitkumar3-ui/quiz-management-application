@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teacher</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dash.css">
+<style>
+.f2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.f2 label{font-weight:700;font-size:.9rem}.f2 input,.f2 select{width:100%;margin-top:4px}
+.qb input,.qb textarea,.qb select{margin:4px 0}.qb .qx,.qb textarea{width:100%}.opt{display:flex;gap:8px;align-items:center}.opt .ot{flex:1}
+.opt input[type=radio]{width:20px;height:20px;accent-color:var(--green)}
+.hint{color:#666;font-size:.85rem}
+</style></head>
+<body>
+<div id="topbar"><span class="sname">My School</span><button id="menu" aria-label="Menu">☰</button></div>
+<aside id="sidebar">
+  <div class="brand"><div class="logo-fallback" id="logoBox">📚</div><span class="sname">My School</span></div>
+  <nav><button data-tab="quizzes" class="on">My Quizzes</button><button data-tab="create">Create Quiz</button>
+    <button data-tab="students">My Students</button><button id="out">Logout</button></nav>
+  <div class="who" id="who"></div>
+</aside>
+<div class="content dash">
+  <section class="tab on" id="tab-quizzes"><h1>My Quizzes</h1>
+    <div class="toolbar"><input id="sq" placeholder="Search quizzes"><button class="btn btn-success sm" id="newq">Create quiz</button></div>
+    <div class="panel tw" id="qlist"></div><div id="resbox"></div></section>
+  <section class="tab" id="tab-create"><h1>Create Quiz</h1>
+    <div class="panel"><div class="f2">
+      <label>Quiz title<input id="t" required></label><label>Subject<select id="sub"></select></label><label>Class &amp; section<select id="cls"></select></label>
+      <label>Quiz date<input id="dt" type="date"></label><label>Starting time<input id="st" type="time"></label><label>Ending time<input id="et" type="time"></label>
+      <label>Duration (minutes)<input id="du" type="number" min="1" value="20"></label><label>Pass mark (%)<input id="pp" type="number" min="1" max="100" value="40"></label></div>
+      <p class="hint">Students can open the quiz only between the starting and ending time. The timer starts when they begin and never runs past the ending time.</p></div>
+    <div id="qs"></div>
+    <div class="toolbar"><button class="btn btn-outline sm" id="addq">+ Add question</button><b id="tot" style="align-self:center">Total marks: 0</b></div>
+    <button class="btn btn-success" id="save">Save quiz</button></section>
+  <section class="tab" id="tab-students"><h1>My Students</h1><div class="panel tw" id="slist"></div></section>
+</div>
+<dialog id="dlg"><div id="dbody"></div><div class="row"><button class="btn btn-outline sm" onclick="dlg.close()">Close</button></div></dialog>
+<script src="config.js"></script><script src="app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+guard("teacher");
+const $ = id => document.getElementById(id); let meta = {classes: [], subjects: []}, chart, qn = 0;
+const when = d => new Date(d).toLocaleString([], {dateStyle: "medium", timeStyle: "short"});
+const cl = id => (meta.classes.find(c => c.id === id) || {}).label || "—", sj = id => (meta.subjects.find(s => s.id === id) || {}).name || "—";
+$("who").textContent = S.name + " (Teacher)"; $("out").onclick = logout; $("menu").onclick = () => $("sidebar").classList.toggle("open");
+function tab(t) {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x.id === "tab-" + t));
+  document.querySelectorAll("#sidebar nav button[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $("sidebar").classList.remove("open"); if (t === "quizzes") quizzes(); if (t === "students") students();
+}
+document.querySelectorAll("#sidebar nav button[data-tab]").forEach(b => b.onclick = () => tab(b.dataset.tab));
+$("newq").onclick = () => tab("create");
+
+async function quizzes() {
+  const q = await api("/teacher/quizzes/?q=" + encodeURIComponent($("sq").value));
+  $("qlist").innerHTML = q.length ? `<table><tr><th>Quiz</th><th>Subject</th><th>Class</th><th>Opens</th><th>Closes</th><th>Marks</th><th></th></tr>` + q.map(x =>
+    `<tr><td>${esc(x.title)}</td><td>${esc(sj(x.subject))}</td><td>${esc(cl(x.school_class))}</td><td>${when(x.start_at)}</td><td>${when(x.end_at)}</td><td>${x.total_marks}</td>
+    <td><button class="btn btn-primary sm" data-r="${x.id}">Results</button><button class="btn btn-del sm" data-d="${x.id}">Delete</button></td></tr>`).join("") + "</table>"
+    : `<p class="empty">No quizzes yet. Click “Create quiz” to make your first one.</p>`;
+  $("qlist").onclick = async e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.r) results(b.dataset.r, q.find(x => x.id == b.dataset.r).title);
+    if (b.dataset.d && confirm("Delete this quiz and all its results?")) {
+      try { await api("/teacher/quizzes/" + b.dataset.d + "/", {method: "DELETE"}); toast("Quiz deleted"); quizzes(); $("resbox").innerHTML = ""; } catch (err) { toast(err.message, "err"); }
+    }
+  };
+}
+$("sq").oninput = quizzes;
+async function results(id, title) {
+  const r = await api(`/teacher/quizzes/${id}/results/`), a = r.attempts;
+  $("resbox").innerHTML = `<div class="panel"><h3 style="margin-top:0;color:var(--primary)">Results: ${esc(title)}</h3>
+    <div class="cards"><div class="kpi"><b>${a.length}</b>Submitted</div><div class="kpi"><b>${r.average_percentage}%</b>Class average</div><div class="kpi"><b>${r.highest_percentage}%</b>Highest</div></div>` +
+    (a.length ? `<canvas id="rc" style="max-height:260px"></canvas><div class="tw"><table><tr><th>Reg. no.</th><th>Student</th><th>Marks</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Submitted</th></tr>` +
+      a.map(x => `<tr><td>${esc(x.reg_no)}</td><td>${esc(x.name)}</td><td>${x.score}/${x.total}</td><td>${x.correct}</td><td>${x.incorrect}</td><td>${x.unattempted}</td><td>${when(x.submitted_at)}</td></tr>`).join("") + "</table></div>"
+      : `<p class="empty">No one has submitted this quiz yet.</p>`) + "</div>";
+  if (a.length) { if (chart) chart.destroy();
+    chart = new Chart($("rc"), {type: "bar", data: {labels: a.map(x => x.name), datasets: [{data: a.map(x => x.total ? Math.round(x.score * 100 / x.total) : 0), backgroundColor: "#800020", borderRadius: 6}]},
+      options: {plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, max: 100, title: {display: true, text: "Percentage"}}}}}); }
+  $("resbox").scrollIntoView({behavior: "smooth"});
+}
+
+/* ---- Create quiz ---- */
+function addQ() {
+  const n = ++qn, d = document.createElement("div"); d.className = "panel qb";
+  d.innerHTML = `<div class="inline"><select class="qt"><option value="mcq">Multiple choice</option><option value="tf">True / False</option><option value="short">Short answer</option></select>
+    <input class="qm" type="number" min="1" value="1" style="max-width:90px" title="Marks"><button type="button" class="btn btn-del sm rm">Remove</button></div>
+    <input class="qx" placeholder="Question"><textarea class="qc" rows="2" placeholder="Code or extra details (optional)"></textarea><div class="qa"></div>`;
+  const fill = () => { const t = d.querySelector(".qt").value;
+    d.querySelector(".qa").innerHTML = t === "mcq" ? [0, 1, 2, 3].map(i => `<label class="opt"><input type="radio" name="r${n}" value="${i}" title="Correct answer"><input class="ot" placeholder="Option ${i + 1}"></label>`).join("") + `<p class="hint">Tick the correct option.</p>`
+      : t === "tf" ? `<select class="tf"><option value="true">Correct answer: True</option><option value="false">Correct answer: False</option></select>` : `<input class="sa" placeholder="Correct answer (graded automatically, ignoring capital letters)" style="width:100%">`; };
+  d.querySelector(".qt").onchange = fill; d.querySelector(".rm").onclick = () => { d.remove(); total(); }; d.querySelector(".qm").oninput = total;
+  fill(); $("qs").appendChild(d); total();
+}
+const total = () => $("tot").textContent = "Total marks: " + [...document.querySelectorAll(".qm")].reduce((s, i) => s + (+i.value || 0), 0);
+$("addq").onclick = addQ;
+$("save").onclick = async () => {
+  const qs = [...document.querySelectorAll(".qb")].map(b => { const t = b.querySelector(".qt").value;
+    const o = {qtype: t, text: b.querySelector(".qx").value.trim(), code: b.querySelector(".qc").value, marks: +b.querySelector(".qm").value || 1};
+    if (t === "mcq") { const ch = b.querySelector("input[type=radio]:checked");
+      o.options = [...b.querySelectorAll(".ot")].map((i, k) => ({text: i.value.trim(), is_correct: !!ch && +ch.value === k})).filter(x => x.text); }
+    else o.correct_text = t === "tf" ? b.querySelector(".tf").value : b.querySelector(".sa").value.trim();
+    return o; });
+  if (!$("t").value.trim() || !$("dt").value || !$("st").value || !$("et").value) return toast("Fill in the title, date, starting time and ending time.", "err");
+  if (qs.some(q => !q.text)) return toast("Every question needs some text.", "err");
+  const at = tm => new Date($("dt").value + "T" + tm).toISOString();
+  try {
+    await api("/teacher/quizzes/", {method: "POST", body: JSON.stringify({title: $("t").value.trim(), subject: +$("sub").value, school_class: +$("cls").value,
+      start_at: at($("st").value), end_at: at($("et").value), duration_minutes: +$("du").value, pass_percent: +$("pp").value, questions: qs})});
+    toast("Quiz saved. Students in the class have been notified."); $("qs").innerHTML = ""; $("t").value = ""; addQ(); tab("quizzes");
+  } catch (err) { toast(err.message, "err"); }
+};
+
+/* ---- Students ---- */
+async function students() {
+  const s = await api("/teacher/students/");
+  $("slist").innerHTML = s.length ? `<table><tr><th>Reg. no.</th><th>Name</th><th>Class</th><th></th></tr>` + s.map(x =>
+    `<tr><td>${esc(x.reg_no)}</td><td>${esc(x.name)}</td><td>${esc(x.class)}</td><td><button class="btn btn-primary sm" data-id="${x.id}" data-n="${esc(x.name)}">Performance</button></td></tr>`).join("") + "</table>"
+    : `<p class="empty">No students in your classes yet.</p>`;
+  $("slist").onclick = async e => { const b = e.target.closest("button"); if (!b) return;
+    try { const p = await api(`/students/${b.dataset.id}/performance/`);
+      $("dbody").innerHTML = `<h3>${esc(b.dataset.n)}</h3><p>Average <b>${p.average_percentage}%</b> · Highest <b>${p.highest_percentage}%</b></p>` +
+        (p.quizzes.length ? `<div class="tw"><table><tr><th>Quiz</th><th>Subject</th><th>Marks</th><th>%</th></tr>${p.quizzes.map(q => `<tr><td>${esc(q.quiz)}</td><td>${esc(q.subject)}</td><td>${q.score}/${q.total}</td><td>${q.percentage}%</td></tr>`).join("")}</table></div>` : `<p class="empty">No quizzes completed yet.</p>`);
+      $("dlg").showModal(); } catch (err) { toast(err.message, "err"); } };
+}
+(async () => { await loadSchool(); try { meta = await api("/meta/");
+  $("sub").innerHTML = meta.subjects.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join(""); $("cls").innerHTML = meta.classes.map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join("");
+  addQ(); quizzes(); } catch (e) { toast(e.message, "err"); } })();
+</script></body></html>

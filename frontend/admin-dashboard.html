@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dash.css"></head>
+<body>
+<div id="topbar"><span class="sname">My School</span><button id="menu" aria-label="Menu">☰</button></div>
+<aside id="sidebar">
+  <div class="brand"><div class="logo-fallback" id="logoBox">📚</div><span class="sname">My School</span></div>
+  <nav>
+    <button data-tab="overview" class="on">Overview</button><button data-tab="teacher">Teachers</button>
+    <button data-tab="student">Students</button><button data-tab="setup">Classes &amp; Subjects</button>
+    <button data-tab="school">School Details</button><button id="out">Logout</button>
+  </nav>
+  <div class="who" id="who"></div>
+</aside>
+<div class="content dash">
+  <section class="tab on" id="tab-overview"><h1>Overview</h1>
+    <div class="cards" id="kpis"></div>
+    <div class="charts"><div class="panel"><b>Subject-wise average (%)</b><canvas id="c1"></canvas><p class="empty" id="e1" hidden>No quiz results yet.</p></div>
+      <div class="panel"><b>Class-wise average (%)</b><canvas id="c2"></canvas><p class="empty" id="e2" hidden>No quiz results yet.</p></div></div>
+  </section>
+  <section class="tab" id="tab-teacher"></section>
+  <section class="tab" id="tab-student"></section>
+  <section class="tab" id="tab-setup"><h1>Classes &amp; Subjects</h1><div class="two">
+    <div class="panel"><b>Classes</b><div class="inline" style="margin-top:10px"><input id="cn" placeholder="Class (e.g. Grade 8)"><input id="cs" placeholder="Section" style="max-width:100px"><button class="btn btn-success sm" id="addC">Add</button></div><div id="classes"></div></div>
+    <div class="panel"><b>Subjects</b><div class="inline" style="margin-top:10px"><input id="sn" placeholder="Subject name"><button class="btn btn-success sm" id="addS">Add</button></div><div id="subjects"></div></div></div>
+  </section>
+  <section class="tab" id="tab-school"><h1>School Details</h1><form class="panel" id="schoolForm" style="max-width:520px">
+    <label>School name<input name="name" required></label><br><br><label>Address<input name="address"></label><br><br>
+    <label>Phone<input name="phone"></label><br><br><label>Email<input name="email" type="email"></label><br><br>
+    <label>Logo<input name="logo" type="file" accept="image/*"></label><br><br><button class="btn btn-success">Save changes</button></form></section>
+</div>
+<dialog id="dlg"><form id="dform" method="dialog"></form></dialog>
+<script src="config.js"></script><script src="app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+guard("admin");
+const $ = id => document.getElementById(id);
+let meta = {classes: [], subjects: []}, charts = {};
+$("who").textContent = S.name + " (Admin)";
+$("out").onclick = logout;
+$("menu").onclick = () => $("sidebar").classList.toggle("open");
+
+function show(tab) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + tab));
+  document.querySelectorAll("#sidebar nav button[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  $("sidebar").classList.remove("open");
+  ({overview, teacher: () => users("teacher"), student: () => users("student"), setup, school})[tab]();
+}
+document.querySelectorAll("#sidebar nav button[data-tab]").forEach(b => b.onclick = () => show(b.dataset.tab));
+const label = id => (meta.classes.find(c => c.id === id) || {}).label || "—";
+async function loadMeta() { meta = await api("/meta/"); }
+
+/* ---- Overview ---- */
+async function overview() {
+  const s = await api("/admin/stats/");
+  $("kpis").innerHTML = [["Students", s.students], ["Teachers", s.teachers], ["Quizzes", s.quizzes],
+    ["Average score", s.average_percentage + "%"], ["Highest score", s.highest_percentage + "%"]]
+    .map(([k, v]) => `<div class="kpi"><b>${v}</b>${k}</div>`).join("");
+  draw("c1", "e1", s.subject_wise.map(x => x.subject), s.subject_wise.map(x => x.average));
+  draw("c2", "e2", s.class_wise.map(x => x.class), s.class_wise.map(x => x.average));
+}
+function draw(cv, em, labels, data) {
+  if (charts[cv]) charts[cv].destroy();
+  $(em).hidden = labels.length > 0; $(cv).hidden = labels.length === 0;
+  if (!labels.length) return;
+  charts[cv] = new Chart($(cv), {type: "bar", data: {labels, datasets: [{data, backgroundColor: "#800020", borderRadius: 6}]},
+    options: {plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, max: 100}}}});
+}
+
+/* ---- Teachers / Students ---- */
+const FIELDS = {
+  teacher: [["first_name", "First name"], ["last_name", "Last name"], ["email", "Email", "email"], ["password", "Password (min 8 characters)", "password"],
+            ["teaching_classes", "Classes taught", "multi:classes"], ["subjects", "Subjects", "multi:subjects"]],
+  student: [["first_name", "First name"], ["last_name", "Last name"], ["school_class", "Class", "select:classes"], ["password", "Password (min 8 characters)", "password"]]
+};
+async function users(role) {
+  const el = $("tab-" + role), plural = role === "teacher" ? "Teachers" : "Students";
+  if (!el.dataset.built) {
+    el.dataset.built = 1;
+    el.innerHTML = `<h1>${plural}</h1><div class="toolbar"><input id="q-${role}" placeholder="Search by name, email or registration number">
+      ${role === "student" ? `<select id="f-${role}"><option value="">All classes</option>${meta.classes.map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join("")}</select>` : ""}
+      <button class="btn btn-success sm" id="add-${role}">Add ${role}</button></div><div class="panel tw" id="list-${role}"></div>`;
+    let t; $("q-" + role).oninput = () => { clearTimeout(t); t = setTimeout(() => users(role), 250); };
+    if ($("f-" + role)) $("f-" + role).onchange = () => users(role);
+    $("add-" + role).onclick = () => form(role);
+  }
+  const q = encodeURIComponent($("q-" + role).value), c = $("f-" + role) ? $("f-" + role).value : "";
+  const rows = await api(`/admin/users/?role=${role}&q=${q}&class=${c}`);
+  const head = role === "teacher" ? "<th>Name</th><th>Email</th><th>Classes</th>" : "<th>Reg. no.</th><th>Name</th><th>Class</th>";
+  $("list-" + role).innerHTML = rows.length ? `<table><tr>${head}<th></th></tr>${rows.map(u => `<tr>` +
+    (role === "teacher" ? `<td>${esc(u.first_name + " " + u.last_name)}</td><td>${esc(u.email)}</td><td>${u.teaching_classes.map(label).map(esc).join(", ") || "—"}</td>`
+      : `<td>${esc(u.reg_no)}</td><td>${esc(u.first_name + " " + u.last_name)}</td><td>${esc(label(u.school_class))}</td>`) +
+    `<td><button class="btn btn-edit sm" data-e="${u.id}">Edit</button><button class="btn btn-del sm" data-d="${u.id}">Delete</button></td></tr>`).join("")}</table>`
+    : `<p class="empty">No ${plural.toLowerCase()} found.</p>`;
+  $("list-" + role).onclick = async e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.e) form(role, rows.find(u => u.id == b.dataset.e));
+    if (b.dataset.d && confirm("Delete this " + role + "? This cannot be undone.")) {
+      try { await api("/admin/users/" + b.dataset.d + "/", {method: "DELETE"}); toast("Deleted"); users(role); } catch (err) { toast(err.message, "err"); }
+    }
+  };
+}
+function form(role, u) {
+  const opt = (arr, key, sel) => arr.map(x => `<option value="${x.id}" ${[].concat(sel ?? []).includes(x.id) ? "selected" : ""}>${esc(x.label || x.name)}</option>`).join("");
+  $("dform").innerHTML = `<h3>${u ? "Edit" : "Add"} ${role}</h3>` + FIELDS[role].map(([k, l, t = "text"]) => {
+    const v = u ? u[k] : "";
+    if (t.startsWith("multi")) return `<label>${l}<select name="${k}" multiple>${opt(meta[t.split(":")[1]], k, v)}</select></label>`;
+    if (t.startsWith("select")) return `<label>${l}<select name="${k}"><option value="">— none —</option>${opt(meta[t.split(":")[1]], k, v)}</select></label>`;
+    return `<label>${l}<input name="${k}" type="${t}" value="${t === "password" ? "" : esc(v)}" ${k === "password" && u ? "" : k === "last_name" ? "" : "required"}></label>`;
+  }).join("") + `<div class="row"><button type="button" class="btn btn-outline sm" id="cancel">Cancel</button><button class="btn btn-success sm">Save</button></div>`;
+  $("dlg").showModal(); $("cancel").onclick = () => $("dlg").close();
+  $("dform").onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData($("dform")), body = {role};
+    for (const [k, , t = ""] of FIELDS[role]) {
+      if (t.startsWith("multi")) body[k] = f.getAll(k).map(Number);
+      else if (t.startsWith("select")) body[k] = f.get(k) ? Number(f.get(k)) : null;
+      else if (k !== "password" || f.get(k)) body[k] = f.get(k);
+    }
+    try {
+      const r = await api("/admin/users/" + (u ? u.id + "/" : ""), {method: u ? "PATCH" : "POST", body: JSON.stringify(body)});
+      $("dlg").close();
+      toast(!u && r.reg_no ? "Student added. Registration number: " + r.reg_no : "Saved");
+      users(role);
+    } catch (err) { toast(err.message, "err"); }
+  };
+}
+
+/* ---- Classes & subjects ---- */
+async function setup() {
+  const [cl, sb] = await Promise.all([api("/admin/classes/"), api("/admin/subjects/")]);
+  const chips = (arr, f, k) => arr.map(x => `<span class="chip">${esc(f(x))}<button data-k="${k}" data-id="${x.id}" title="Delete">×</button></span>`).join("") || `<p class="empty">None yet.</p>`;
+  $("classes").innerHTML = chips(cl, c => c.name + "-" + c.section, "classes");
+  $("subjects").innerHTML = chips(sb, s => s.name, "subjects");
+  await loadMeta();
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest(".chip button"); if (!b || !confirm("Delete this item?")) return;
+  try { await api(`/admin/${b.dataset.k}/${b.dataset.id}/`, {method: "DELETE"}); toast("Deleted"); setup(); } catch (err) { toast(err.message, "err"); }
+});
+$("addC").onclick = async () => {
+  try { await api("/admin/classes/", {method: "POST", body: JSON.stringify({name: $("cn").value.trim(), section: $("cs").value.trim()})}); $("cn").value = $("cs").value = ""; toast("Class added"); setup(); }
+  catch (err) { toast(err.message, "err"); }
+};
+$("addS").onclick = async () => {
+  try { await api("/admin/subjects/", {method: "POST", body: JSON.stringify({name: $("sn").value.trim()})}); $("sn").value = ""; toast("Subject added"); setup(); }
+  catch (err) { toast(err.message, "err"); }
+};
+
+/* ---- School details ---- */
+async function school() {
+  const s = await fetch(API_BASE + "/school/").then(r => r.json());
+  for (const k of ["name", "address", "phone", "email"]) $("schoolForm").elements[k].value = s[k] || "";
+}
+$("schoolForm").onsubmit = async e => {
+  e.preventDefault();
+  const fd = new FormData($("schoolForm")); if (!fd.get("logo").size) fd.delete("logo");
+  try { await api("/school/", {method: "PUT", body: fd}); toast("School details saved"); loadSchool(); }
+  catch (err) { toast(err.message, "err"); }
+};
+
+(async () => { await loadSchool(); try { await loadMeta(); overview(); } catch (e) { toast(e.message, "err"); } })();
+</script></body></html>
