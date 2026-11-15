@@ -5,6 +5,10 @@
 <link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dash.css">
 <style>
 .f2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.f2 label{font-weight:700;font-size:.9rem}.f2 input,.f2 select{width:100%;margin-top:4px}
+.time-field{display:flex;gap:6px;align-items:center}.time-field input{flex:1;min-width:0}
+.period-toggle{display:flex;flex:none}.period-toggle button{padding:7px 9px;border:1px solid var(--primary);background:#fff;color:var(--primary);cursor:pointer}
+.period-toggle button:first-child{border-radius:8px 0 0 8px}.period-toggle button:last-child{border-radius:0 8px 8px 0}
+.period-toggle button.on{background:var(--primary);color:#fff}
 .qb input,.qb textarea,.qb select{margin:4px 0}.qb .qx,.qb textarea{width:100%}.opt{display:flex;gap:8px;align-items:center}.opt .ot{flex:1}
 .opt input[type=radio]{width:20px;height:20px;accent-color:var(--green)}
 .hint{color:#666;font-size:.85rem}
@@ -24,7 +28,7 @@
   <section class="tab" id="tab-create"><h1>Create Quiz</h1>
     <div class="panel"><div class="f2">
       <label>Quiz title<input id="t" required></label><label>Subject<select id="sub"></select></label><label>Class &amp; section<select id="cls"></select></label>
-      <label>Quiz date<input id="dt" type="date"></label><label>Starting time<input id="st" type="time"></label><label>Ending time<input id="et" type="time"></label>
+      <label>Quiz date<input id="dt" type="date"></label><label>Starting time<span class="time-field"><input id="st" type="time"><span class="period-toggle" role="group" aria-label="Starting time AM or PM"><button type="button" class="on" data-time="st" data-period="AM" aria-pressed="true">AM</button><button type="button" data-time="st" data-period="PM" aria-pressed="false">PM</button></span></span></label><label>Ending time<span class="time-field"><input id="et" type="time"><span class="period-toggle" role="group" aria-label="Ending time AM or PM"><button type="button" class="on" data-time="et" data-period="AM" aria-pressed="true">AM</button><button type="button" data-time="et" data-period="PM" aria-pressed="false">PM</button></span></span></label>
       <label>Duration (minutes)<input id="du" type="number" min="1" value="20"></label><label>Pass mark (%)<input id="pp" type="number" min="1" max="100" value="40"></label></div>
       <p class="hint">Students can open the quiz only between the starting and ending time. The timer starts when they begin and never runs past the ending time.</p></div>
     <div id="qs"></div>
@@ -91,6 +95,53 @@ function addQ() {
 }
 const total = () => $("tot").textContent = "Total marks: " + [...document.querySelectorAll(".qm")].reduce((s, i) => s + (+i.value || 0), 0);
 $("addq").onclick = addQ;
+const localDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const localTime = d => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+function updatePeriodButtons(id) {
+  const isPm = Number($(id).value.slice(0, 2)) >= 12;
+  document.querySelectorAll(`.period-toggle button[data-time="${id}"]`).forEach(button => {
+    const active = button.dataset.period === (isPm ? "PM" : "AM");
+    button.classList.toggle("on", active);
+    button.setAttribute("aria-pressed", active);
+  });
+}
+document.querySelectorAll(".period-toggle button").forEach(button => button.onclick = () => {
+  const input = $(button.dataset.time), targetPm = button.dataset.period === "PM";
+  if (input.value) {
+    const [hour, minute] = input.value.split(":").map(Number);
+    const hour12 = hour % 12;
+    input.value = `${String(hour12 + (targetPm ? 12 : 0)).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  updatePeriodButtons(button.dataset.time);
+  if (button.dataset.time === "st") validateStartTime();
+});
+["st", "et"].forEach(id => $(id).onchange = () => {
+  updatePeriodButtons(id);
+  if (id === "st") validateStartTime();
+});
+function updateScheduleMinima() {
+  const now = new Date(), today = localDate(now);
+  $("dt").min = today;
+  $("st").min = $("dt").value === today ? localTime(now) : "";
+}
+function validateScheduleDate() {
+  updateScheduleMinima();
+  if ($("dt").value && $("dt").value < localDate(new Date())) {
+    toast("Past dates are not allowed. Choose today or a future date.", "err");
+    return false;
+  }
+  return true;
+}
+function validateStartTime() {
+  const date = $("dt").value, time = $("st").value, now = new Date();
+  if (date === localDate(now) && time && new Date(date + "T" + time) <= now) {
+    toast("Past starting times are not allowed.", "err");
+    return false;
+  }
+  return true;
+}
+$("dt").onchange = () => { if (validateScheduleDate()) validateStartTime(); };
+updateScheduleMinima();
 $("save").onclick = async () => {
   const qs = [...document.querySelectorAll(".qb")].map(b => { const t = b.querySelector(".qt").value;
     const o = {qtype: t, text: b.querySelector(".qx").value.trim(), code: b.querySelector(".qc").value, marks: +b.querySelector(".qm").value || 1};
@@ -99,6 +150,9 @@ $("save").onclick = async () => {
     else o.correct_text = t === "tf" ? b.querySelector(".tf").value : b.querySelector(".sa").value.trim();
     return o; });
   if (!$("t").value.trim() || !$("dt").value || !$("st").value || !$("et").value) return toast("Fill in the title, date, starting time and ending time.", "err");
+  if (!validateScheduleDate() || !validateStartTime()) return;
+  const start = new Date($("dt").value + "T" + $("st").value), end = new Date($("dt").value + "T" + $("et").value);
+  if (end <= start) return toast("The ending time must be after the starting time.", "err");
   if (qs.some(q => !q.text)) return toast("Every question needs some text.", "err");
   const at = tm => new Date($("dt").value + "T" + tm).toISOString();
   try {

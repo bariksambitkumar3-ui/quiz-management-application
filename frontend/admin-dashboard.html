@@ -2,7 +2,12 @@
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dash.css"></head>
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dash.css">
+<style>
+dialog .password-field{display:flex;gap:8px}
+dialog .password-field input{flex:1;min-width:0}
+dialog .password-toggle{display:flex;align-items:center;justify-content:center;min-width:42px;border:1px solid #ccc;border-radius:8px;background:#fff;color:inherit;cursor:pointer}
+</style></head>
 <body>
 <div id="topbar"><span class="sname">My School</span><button id="menu" aria-label="Menu">☰</button></div>
 <aside id="sidebar">
@@ -108,9 +113,18 @@ function form(role, u) {
     const v = u ? u[k] : "";
     if (t.startsWith("multi")) return `<label>${l}<select name="${k}" multiple>${opt(meta[t.split(":")[1]], k, v)}</select></label>`;
     if (t.startsWith("select")) return `<label>${l}<select name="${k}"><option value="">— none —</option>${opt(meta[t.split(":")[1]], k, v)}</select></label>`;
-    return `<label>${l}<input name="${k}" type="${t}" value="${t === "password" ? "" : esc(v)}" ${k === "password" && u ? "" : k === "last_name" ? "" : "required"}></label>`;
+    if (t === "password") return `<label>${l}<span class="password-field"><input name="${k}" type="password" value="" ${u ? "" : "required"}><button type="button" class="password-toggle" aria-label="Show password" title="Show password"><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>`;
+    const nameAttrs = k === "first_name" || k === "last_name" ? 'pattern="[A-Za-z ]+" title="Use letters and spaces only" maxlength="150"' : "";
+    return `<label>${l}<input name="${k}" type="${t}" value="${esc(v)}" ${nameAttrs} ${k === "last_name" ? "" : "required"}></label>`;
   }).join("") + `<div class="row"><button type="button" class="btn btn-outline sm" id="cancel">Cancel</button><button class="btn btn-success sm">Save</button></div>`;
   $("dlg").showModal(); $("cancel").onclick = () => $("dlg").close();
+  $("dform").querySelectorAll(".password-toggle").forEach(button => button.onclick = () => {
+    const input = button.previousElementSibling, visible = input.type === "password";
+    input.type = visible ? "text" : "password";
+    button.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+    button.title = visible ? "Hide password" : "Show password";
+    button.setAttribute("aria-pressed", visible);
+  });
   $("dform").onsubmit = async e => {
     e.preventDefault();
     const f = new FormData($("dform")), body = {role};
